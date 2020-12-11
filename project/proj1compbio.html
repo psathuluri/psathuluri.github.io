@@ -1,0 +1,437 @@
+<link href="proj1compbio_files/anchor-sections/anchor-sections.css" rel="stylesheet" />
+<script src="proj1compbio_files/anchor-sections/anchor-sections.js"></script>
+
+
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>The datasets chosen for this project include Austin TX weather data sourced from WeatherUnderground.com, and Austin bike share trips sourced from the City of Austin. Both datasets were obtained from kaggle.com. I chose these datasets because I am familiar with them from a prior UT Austin DataHack competition, and the information and results are relevant to me as an Austin resident who uses the bicycle share program. Both of the datasets contain entries from December 21st, 2013 to July 31st, 2017. The relevant variables from the weather dataset include Date, average temperature, dew point, humidity, air pressure, visibility, wind speed, and precipitation. The relevant variables from the bike share dataset include Date, ride start time, and duration. I used the existing data to create an additional categorical variable for Month and numeric variable for monthly ridership. My aim is to identify relationships and associations between various weather phenomena and the number and duration of rides. For example, I expect a positive relationship between average temperature and number of riders because a higher temperature would indicates good weather for biking. I also expect that higher humidity levels would result in a decrease in ride duration as longer rides would be unpleasant.</p>
+</div>
+<div id="data-cleanup" class="section level2">
+<h2>Data Cleanup</h2>
+<p>In this cleanup stage, I modified the Date field to the R native Date format, selected the specific variables I want to keep from each dataset, and added month as a factor variable.</p>
+<pre class="r"><code>weather &lt;- read.csv(file = &quot;austin_weather.csv&quot;)
+bikes &lt;- read.csv(file = &quot;austin_bikeshare_trips.csv&quot;)
+bikes &lt;- bikes %&gt;% mutate(Date = as.Date(word(start_time, 1), &quot;%Y-%m-%d&quot;))
+bikes &lt;- select(bikes, c(duration_minutes, Date))
+
+weather &lt;- weather %&gt;% select(Date, TempAvgF, DewPointAvgF, HumidityAvgPercent, SeaLevelPressureAvgInches, VisibilityAvgMiles, WindAvgMPH, PrecipitationSumInches)
+weather &lt;- weather %&gt;% separate(Date, c(&quot;year&quot;, &quot;month&quot;, &quot;day&quot;), sep = &quot;-&quot;, remove = FALSE) %&gt;% select(-&quot;day&quot;, -&quot;year&quot;) %&gt;% mutate(month = as.factor(month.name[as.numeric(month)]))
+weather$month &lt;- factor(weather$month, levels = month.name)
+weather &lt;- weather %&gt;% mutate(Date = as.Date(Date, &quot;%Y-%m-%d&quot;))</code></pre>
+</div>
+<div id="joining" class="section level2">
+<h2>Joining</h2>
+<p>The datasets were joined on the common variable of Date. I first used a set operation to ensure that there are no bike share entries that without a corresponding entry in the weather dataset. Then the 2 were joined with left_join to ensure that the final dataset contains entries (days) where there was zero ridership. The weather datatset has 1319 rows (accounting for about 3 years and 7 months of data) and the bike share dataset has 649231 rows (with unique dates corresponding to about 3 years and 5 months of data). The final joined dataset has 649293 rows, indicating there are 62 days without any bike share users. There were no entries dropped thorugh the join operation. Following this operation, I did final data cleaning steps including changing variables that were imported as factors to the numerical type and removing rows with na. The PrecipitationSumInches variable contains “T” to indicate trace amount of rain, so I recoded instanced of “T” to 0 in order to consider the variable as numeric.</p>
+<pre class="r"><code>setdiff(bikes$Date, weather$Date)</code></pre>
+<pre><code>## numeric(0)</code></pre>
+<pre class="r"><code>length(unique(bikes$Date))</code></pre>
+<pre><code>## [1] 1257</code></pre>
+<pre class="r"><code>length(unique(weather$Date))</code></pre>
+<pre><code>## [1] 1319</code></pre>
+<pre class="r"><code>bikeData &lt;- left_join(weather, bikes, by=&quot;Date&quot;)
+
+bikeData$PrecipitationSumInches[bikeData$PrecipitationSumInches==&quot;T&quot;] &lt;- &quot;0&quot;
+bikeData$PrecipitationSumInches &lt;- droplevels(bikeData$PrecipitationSumInches) 
+bikeData$PrecipitationSumInches &lt;- as.numeric(levels(bikeData$PrecipitationSumInches))[bikeData$PrecipitationSumInches] 
+bikeData$DewPointAvgF &lt;- as.numeric(levels(bikeData$DewPointAvgF))[bikeData$DewPointAvgF] 
+bikeData$HumidityAvgPercent &lt;- as.numeric(levels(bikeData$HumidityAvgPercent))[bikeData$HumidityAvgPercent] 
+bikeData$SeaLevelPressureAvgInches &lt;- as.numeric(levels(bikeData$SeaLevelPressureAvgInches))[bikeData$SeaLevelPressureAvgInches] 
+bikeData$VisibilityAvgMiles &lt;- as.numeric(levels(bikeData$VisibilityAvgMiles))[bikeData$VisibilityAvgMiles] 
+bikeData$WindAvgMPH &lt;- as.numeric(levels(bikeData$WindAvgMPH))[bikeData$WindAvgMPH] 
+bikeData &lt;- na.omit(bikeData)</code></pre>
+</div>
+<div id="wrangling-summary-statistics" class="section level2">
+<h2>Wrangling &amp; Summary Statistics</h2>
+<p>This section contains summary statistics about several of the numerical variables in the final dataset. Prior to calculating summary statistics, a final data cleanup step was necesary. The dataset originally contained multiple entries per day, with an entry for each ride taken. I collapsed these by transforming the duration column to contain each day’s average duration, and used distinct() to ensure only one entry per day. Additionally, I used the mutate function to create the NumRiders variable to identify the number of riders for each day. This was done after joining because it involves the creation of additional variables for summary statistics.</p>
+<pre class="r"><code>bikeData &lt;- bikeData %&gt;% group_by(Date) %&gt;% mutate(NumRiders = n())
+bikeData &lt;- bikeData %&gt;% group_by(Date) %&gt;% mutate(mean_duration = mean(duration_minutes)) %&gt;% select(-duration_minutes) %&gt;% distinct
+
+bikeData %&gt;% group_by(month) %&gt;% summarise(mean(NumRiders)) %&gt;% 
+  kable(col.names = c(&quot;Month&quot;, &quot;Mean Riders&quot;))</code></pre>
+<pre><code>## `summarise()` ungrouping output (override with `.groups` argument)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Month</th>
+<th align="right">Mean Riders</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">January</td>
+<td align="right">350.1721</td>
+</tr>
+<tr class="even">
+<td align="left">February</td>
+<td align="right">371.9646</td>
+</tr>
+<tr class="odd">
+<td align="left">March</td>
+<td align="right">903.2419</td>
+</tr>
+<tr class="even">
+<td align="left">April</td>
+<td align="right">593.5444</td>
+</tr>
+<tr class="odd">
+<td align="left">May</td>
+<td align="right">561.0645</td>
+</tr>
+<tr class="even">
+<td align="left">June</td>
+<td align="right">501.9914</td>
+</tr>
+<tr class="odd">
+<td align="left">July</td>
+<td align="right">495.8211</td>
+</tr>
+<tr class="even">
+<td align="left">August</td>
+<td align="right">414.4719</td>
+</tr>
+<tr class="odd">
+<td align="left">September</td>
+<td align="right">474.1023</td>
+</tr>
+<tr class="even">
+<td align="left">October</td>
+<td align="right">751.8817</td>
+</tr>
+<tr class="odd">
+<td align="left">November</td>
+<td align="right">413.1333</td>
+</tr>
+<tr class="even">
+<td align="left">December</td>
+<td align="right">257.3562</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>bikeData %&gt;% filter(month == &quot;June&quot; || month == &quot;July&quot; || month == &quot;August&quot;) %&gt;% group_by(month) %&gt;% summarize(n = n(), min = min(TempAvgF), max = max(TempAvgF), mean = mean(TempAvgF), sd = sd(TempAvgF))%&gt;% pivot_longer(cols=-c(1:1), names_to = &quot;stats&quot;, values_to = &quot;val&quot;) %&gt;% kable(col.names = c(&quot;Month&quot;,&quot;Stat&quot;, &quot;Avg Temp&quot;))</code></pre>
+<pre><code>## `summarise()` ungrouping output (override with `.groups` argument)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Month</th>
+<th align="left">Stat</th>
+<th align="right">Avg Temp</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">June</td>
+<td align="left">n</td>
+<td align="right">116.000000</td>
+</tr>
+<tr class="even">
+<td align="left">June</td>
+<td align="left">min</td>
+<td align="right">75.000000</td>
+</tr>
+<tr class="odd">
+<td align="left">June</td>
+<td align="left">max</td>
+<td align="right">91.000000</td>
+</tr>
+<tr class="even">
+<td align="left">June</td>
+<td align="left">mean</td>
+<td align="right">82.836207</td>
+</tr>
+<tr class="odd">
+<td align="left">June</td>
+<td align="left">sd</td>
+<td align="right">3.270272</td>
+</tr>
+<tr class="even">
+<td align="left">July</td>
+<td align="left">n</td>
+<td align="right">123.000000</td>
+</tr>
+<tr class="odd">
+<td align="left">July</td>
+<td align="left">min</td>
+<td align="right">75.000000</td>
+</tr>
+<tr class="even">
+<td align="left">July</td>
+<td align="left">max</td>
+<td align="right">93.000000</td>
+</tr>
+<tr class="odd">
+<td align="left">July</td>
+<td align="left">mean</td>
+<td align="right">86.951219</td>
+</tr>
+<tr class="even">
+<td align="left">July</td>
+<td align="left">sd</td>
+<td align="right">2.848220</td>
+</tr>
+<tr class="odd">
+<td align="left">August</td>
+<td align="left">n</td>
+<td align="right">89.000000</td>
+</tr>
+<tr class="even">
+<td align="left">August</td>
+<td align="left">min</td>
+<td align="right">74.000000</td>
+</tr>
+<tr class="odd">
+<td align="left">August</td>
+<td align="left">max</td>
+<td align="right">92.000000</td>
+</tr>
+<tr class="even">
+<td align="left">August</td>
+<td align="left">mean</td>
+<td align="right">86.438202</td>
+</tr>
+<tr class="odd">
+<td align="left">August</td>
+<td align="left">sd</td>
+<td align="right">3.846353</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>bikeData %&gt;% filter(PrecipitationSumInches &gt; 0) %&gt;% ungroup() %&gt;% select(-Date, -month) %&gt;% group_by(TempAvgF) %&gt;% summarise(Mean_Duration = mean(mean_duration), MinDuration = min(mean_duration), MaxDuration = max(mean_duration)) %&gt;% arrange(desc(TempAvgF)) %&gt;% filter(row_number() %% 5 == 1) %&gt;% kable()</code></pre>
+<pre><code>## `summarise()` ungrouping output (override with `.groups` argument)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">TempAvgF</th>
+<th align="right">Mean_Duration</th>
+<th align="right">MinDuration</th>
+<th align="right">MaxDuration</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">90</td>
+<td align="right">40.10074</td>
+<td align="right">38.82933</td>
+<td align="right">41.37215</td>
+</tr>
+<tr class="even">
+<td align="right">85</td>
+<td align="right">25.53636</td>
+<td align="right">22.79401</td>
+<td align="right">28.27872</td>
+</tr>
+<tr class="odd">
+<td align="right">80</td>
+<td align="right">28.45081</td>
+<td align="right">17.36364</td>
+<td align="right">45.98416</td>
+</tr>
+<tr class="even">
+<td align="right">75</td>
+<td align="right">30.83855</td>
+<td align="right">20.69068</td>
+<td align="right">42.36762</td>
+</tr>
+<tr class="odd">
+<td align="right">70</td>
+<td align="right">34.16960</td>
+<td align="right">22.41841</td>
+<td align="right">43.91162</td>
+</tr>
+<tr class="even">
+<td align="right">65</td>
+<td align="right">31.36822</td>
+<td align="right">15.23684</td>
+<td align="right">41.54089</td>
+</tr>
+<tr class="odd">
+<td align="right">60</td>
+<td align="right">31.35744</td>
+<td align="right">22.54337</td>
+<td align="right">43.58700</td>
+</tr>
+<tr class="even">
+<td align="right">55</td>
+<td align="right">26.87168</td>
+<td align="right">26.30105</td>
+<td align="right">27.44231</td>
+</tr>
+<tr class="odd">
+<td align="right">50</td>
+<td align="right">14.52318</td>
+<td align="right">14.52318</td>
+<td align="right">14.52318</td>
+</tr>
+<tr class="even">
+<td align="right">43</td>
+<td align="right">20.80782</td>
+<td align="right">20.80782</td>
+<td align="right">20.80782</td>
+</tr>
+<tr class="odd">
+<td align="right">37</td>
+<td align="right">48.86111</td>
+<td align="right">48.86111</td>
+<td align="right">48.86111</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>bikeData %&gt;% ungroup() %&gt;% select(-Date, -month) %&gt;% summarize_all(.funs = mean) %&gt;% pivot_longer(cols=everything(), names_to = &quot;Numeric Variable&quot;, values_to = &quot;Overall Mean&quot;) %&gt;% kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Numeric Variable</th>
+<th align="right">Overall Mean</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">TempAvgF</td>
+<td align="right">70.9365462</td>
+</tr>
+<tr class="even">
+<td align="left">DewPointAvgF</td>
+<td align="right">56.9341365</td>
+</tr>
+<tr class="odd">
+<td align="left">HumidityAvgPercent</td>
+<td align="right">66.5333333</td>
+</tr>
+<tr class="even">
+<td align="left">SeaLevelPressureAvgInches</td>
+<td align="right">30.0209076</td>
+</tr>
+<tr class="odd">
+<td align="left">VisibilityAvgMiles</td>
+<td align="right">9.1863454</td>
+</tr>
+<tr class="even">
+<td align="left">WindAvgMPH</td>
+<td align="right">5.0040161</td>
+</tr>
+<tr class="odd">
+<td align="left">PrecipitationSumInches</td>
+<td align="right">0.1132771</td>
+</tr>
+<tr class="even">
+<td align="left">NumRiders</td>
+<td align="right">516.8401606</td>
+</tr>
+<tr class="odd">
+<td align="left">mean_duration</td>
+<td align="right">27.6646864</td>
+</tr>
+</tbody>
+</table>
+<p>The first table illustrates the average monthly ridership numbers from December 2013 to July 2017. The months with the highest average ridership numbers are March and October, which may indicate that users prefer to ride in the Fall and Spring.
+The second table illustrates minimum, maximum, mean, and standard deviation values for the Average Temperatures of the summer months (June, July, and August). Based on this data, we can see that all thre months have very similar temperature data generally within 1 degree of each other. Across the summer months on average, min temp is 75 degrees, max temp is 92 degrees, mean temp is 84 degrees, and standard deviation was 3 degrees. There are significantly more June and July observations compared to August ones. pivot_longer was used to put the individual summary statistics from their own seperate columns into a single column for easier readability and comparison.
+The third table identifies mean, min, and max values for the average daily trip duration on days with precipitation and sorts them according to temperature. In general, we can see identify a positive correlation with temperature and mean duration, indicating that users prefer hotter temperatures on days with precipitation. The hottest temperature of 90 degrees F has an average daily duration of 40 minutes, compared to an average daily duration of 20 minutes at 43 degrees F. The min and max values of duration in general share a similar trend.
+The final table identifies the overall mean across all numerical variables without grouping by any categorical variable. In summary, there is an average temperature and dewpoint of 71 and 57 degrees, humidity of 67 percent, sea sevel pressure of 30 inches, visibility of 9 miles, windpeed of 5 mph, precipitation of 0.1 inches, number of riders of 516, and duration of 28 minutes across the entire dataset.</p>
+</div>
+<div id="visualizations" class="section level2">
+<h2>Visualizations</h2>
+<pre class="r"><code>bikeData%&gt;%ungroup()%&gt;%select(-Date, -month)%&gt;%
+  cor%&gt;%as.data.frame%&gt;%
+  rownames_to_column%&gt;%pivot_longer(-1)%&gt;%
+  ggplot(aes(rowname,name,fill=value))+geom_tile()+
+  geom_text(aes(label=round(value,2)))+
+  xlab(&quot;&quot;)+ylab(&quot;&quot;)+coord_fixed()+
+  scale_fill_gradient2(low=&quot;red&quot;,mid=&quot;white&quot;,high=&quot;blue&quot;) + 
+  ggtitle(&quot;Correlation Heatmap&quot;)</code></pre>
+<p><img src="proj1compbio_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<p>According to the correlation heatmap, there does not appear to be any strong positive correlations between numeric variables. The strongest positive correlations include that between Humidity Percent and Dew Point at 0.45. In contrast, we can identify strong negative correlations between Sea Level Pressure and Dew Point, Humidity and Visibilty, Temperature and Sea Level Pressure, and Visibilty and Precipitation. The majority of these make intuitive sense because these weather phenomena affect each other. For instance, high humidity indicates a fog that would lower visibility, and high air pressure is associated with a lower temperature and dew point. The remaining relationships exhibit little to no correlation.</p>
+<pre class="r"><code>bikeData %&gt;% ggplot(aes(TempAvgF, NumRiders, color=month)) + geom_point()+
+  labs(title = &quot;Daily Ridership Numbers across Temperature&quot;, x = &quot;Average Temperature (F)&quot;, y = &quot;Number of Daily Riders&quot;, color = &quot;Month&quot;) +
+  scale_x_continuous(breaks=seq(0,95,5)) + 
+  theme(plot.title = element_text(size = 18, face = &quot;bold&quot;, color = &quot;darkgreen&quot;))</code></pre>
+<p><img src="proj1compbio_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
+<p>This scatterplot depicts the effect of average temperature on daily ridership. Each point represents a day, with x and y position determining temperature and ridership respectively and color determining month. High ridership numbers of around 2500 as evidenced by points at the top of the plot fall under the temperature ranges of 60 to 75 degrees F. Based on the coloring, this coincides with the early spring months of February and March. Additionally, we can identify the Fall month of October that has fairly high ridership numbers of around 1500 across a temperature range fo 65 degrees to 80 degrees F; this can be seen in points at the middle height of the plot. In general, there appears to be a bell curve akin to a normal distribution where extremely low and extremely high temperatures results in low ridership numbers with a spike in ridership approaching a peak at 70 degrees F.</p>
+<pre class="r"><code>glimpse(bikeData)</code></pre>
+<pre><code>## Rows: 1,245
+## Columns: 11
+## Groups: Date [1,245]
+## $ Date                      &lt;date&gt; 2013-12-21, 2013-12-22, 2013-12-23, 2013-1…
+## $ month                     &lt;fct&gt; December, December, December, December, Dec…
+## $ TempAvgF                  &lt;int&gt; 60, 48, 45, 46, 50, 48, 53, 51, 50, 40, 46,…
+## $ DewPointAvgF              &lt;dbl&gt; 49, 36, 27, 28, 40, 36, 39, 39, 41, 26, 28,…
+## $ HumidityAvgPercent        &lt;dbl&gt; 75, 68, 52, 56, 71, 63, 65, 64, 76, 60, 54,…
+## $ SeaLevelPressureAvgInches &lt;dbl&gt; 29.68, 30.13, 30.49, 30.45, 30.33, 30.40, 3…
+## $ VisibilityAvgMiles        &lt;dbl&gt; 7, 10, 10, 10, 10, 9, 9, 10, 10, 10, 10, 10…
+## $ WindAvgMPH                &lt;dbl&gt; 4, 6, 3, 4, 2, 3, 1, 2, 5, 5, 1, 4, 8, 4, 7…
+## $ PrecipitationSumInches    &lt;dbl&gt; 0.46, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0…
+## $ NumRiders                 &lt;int&gt; 103, 117, 96, 85, 145, 100, 115, 194, 255, …
+## $ mean_duration             &lt;dbl&gt; 29.13592, 40.46154, 55.60417, 31.96471, 49.…</code></pre>
+<pre class="r"><code>ggplot(bikeData, aes(x = HumidityAvgPercent, y = mean_duration, fill = month))+
+  geom_bar(position = &quot;dodge&quot;, stat=&#39;summary&#39;, fun.y = mean)+ 
+  facet_wrap(bikeData$month) + 
+  theme(plot.title = element_text(size = 15, face = &quot;bold&quot;, color = &quot;darkblue&quot;)) + 
+  labs(title = &quot;Mean Ride Duration vs Humidity&quot;, x = &quot;Humidity (Percent)&quot;, y = &quot;Ride Duration (minutes)&quot;, fill = &quot;Month&quot;) + 
+  scale_y_continuous(breaks=seq(0,150,20)) + 
+  scale_fill_brewer(palette=&quot;Paired&quot;)</code></pre>
+<pre><code>## Warning: Ignoring unknown parameters: fun.y</code></pre>
+<pre><code>## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`
+## No summary function supplied, defaulting to `mean_se()`</code></pre>
+<p><img src="proj1compbio_files/figure-html/unnamed-chunk-6-1.png" width="672" /></p>
+<p>This barplot depicts the effect of humidity on average rider duration, faceted by months of the year. Unlike what I was expecting, there does not appear to be any relationship at all between humidity and ride duration, even when separating by months that may have different humidities. I had predicted that increased humidity would make it unpleasant to be outside and thus result in shorted ride durations. At first this does appear to be the case in June and July, but it is likely that these months simply do not get to high humidity levels compared to others, so there is no data at these higher percentages. Additionaly, there is no taper or gradual decline in ride duration which supports this theory. There are outliers in the months of Mach and October, where a large spike in average ride duration occurs at high humidity levels. However, because the summary statistics section illustrated that the months of March and October in general have approximately double the amount of riders per day compared to other months, it is likely the case that humidity does not play a role in ride duration and another unknown factor is responsible.</p>
+</div>
+<div id="dimensionality-reduction" class="section level2">
+<h2>Dimensionality Reduction</h2>
+<pre class="r"><code>preparedData &lt;- bikeData%&gt;%ungroup()%&gt;%select(-Date, -month)
+nums &lt;- preparedData%&gt;% select_if(is.numeric) %&gt;% scale
+bikepca &lt;- princomp(nums)
+summary(bikepca, loadings=T)</code></pre>
+<pre><code>## Importance of components:
+##                          Comp.1    Comp.2    Comp.3    Comp.4     Comp.5
+## Standard deviation     1.620510 1.3967185 1.0694014 1.0128624 0.87822346
+## Proportion of Variance 0.292018 0.2169323 0.1271710 0.1140794 0.08576627
+## Cumulative Proportion  0.292018 0.5089503 0.6361213 0.7502007 0.83596700
+##                            Comp.6     Comp.7     Comp.8     Comp.9
+## Standard deviation     0.82023817 0.69486425 0.55692389 0.09654024
+## Proportion of Variance 0.07481461 0.05369161 0.03449039 0.00103639
+## Cumulative Proportion  0.91078161 0.96447322 0.99896361 1.00000000
+## 
+## Loadings:
+##                           Comp.1 Comp.2 Comp.3 Comp.4 Comp.5 Comp.6 Comp.7
+## TempAvgF                   0.514  0.315         0.138  0.150         0.152
+## DewPointAvgF               0.583                0.175        -0.151  0.262
+## HumidityAvgPercent         0.292 -0.490         0.130 -0.231 -0.437  0.292
+## SeaLevelPressureAvgInches -0.485 -0.114 -0.143  0.130        -0.168  0.695
+## VisibilityAvgMiles        -0.108  0.602                0.246         0.444
+## WindAvgMPH                               0.410 -0.821 -0.298         0.204
+## PrecipitationSumInches     0.165 -0.469        -0.119  0.267  0.754  0.300
+## NumRiders                  0.121  0.239 -0.622        -0.657  0.311       
+## mean_duration              0.122        -0.637 -0.472  0.521 -0.278       
+##                           Comp.8 Comp.9
+## TempAvgF                   0.400  0.634
+## DewPointAvgF               0.155 -0.711
+## HumidityAvgPercent        -0.481  0.304
+## SeaLevelPressureAvgInches  0.451       
+## VisibilityAvgMiles        -0.600       
+## WindAvgMPH                 0.108       
+## PrecipitationSumInches                 
+## NumRiders                              
+## mean_duration</code></pre>
+<pre class="r"><code>eigval&lt;-bikepca$sdev^2 #square to convert SDs to eigenvalues
+varprop=round(eigval/sum(eigval), 2) #proportion of var explained by each PC
+ggplot() + geom_bar(aes(y=varprop, x=1:9), stat=&quot;identity&quot;) + 
+  geom_text(aes(x=1:9, y=varprop, label=round(varprop, 2)), vjust=1, col=&quot;white&quot;, size=5) +
+  scale_y_continuous(breaks=seq(0, .6, .2), labels = scales::percent) +
+  scale_x_continuous(breaks=1:10) + 
+  labs(title = &quot;Proportion of Variance vs PCs&quot;, x = &quot;Principle Component&quot;, y = &quot;Variance Proportion&quot;)</code></pre>
+<p><img src="proj1compbio_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
+<p>The initial code took the numerical components of the dataset, scaled them, and used the princomp() function to perform principal component analysis. Based on the summary, the first PC’s most significant positive contributers are Temperature and Dew Point, with a negative contribution from Air Pressure. This component thus appears to be primarily concerned with temperature and the weather phenomena that temperature directly relates to. This is indicitave of hot and slightly wet days that are prevailant in Austin. PC2 appears to be concerned with low humidity and precipitation alongside high temperatures and visibility, and seems indicative of clear and warm days.</p>
+<p>Based on the proportion of variance plot, the optimal number of PCs to keep is 2; the plot flattens out and the remaining PCs contribute a relatively small and diminishing proportion of the variance.</p>
+<pre class="r"><code>fviz_pca_biplot(bikepca)</code></pre>
+<p><img src="proj1compbio_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<p>The PCA biplot is a combination of a Plot of Loadings as well as a Plot of Scores for both PC1 and PC2 (here labeled as Dimension 1 and 2). The arrows indicate which variables contribute to which PCs; Temperature and Dew Point contribute positively to both, while factors such as Humidity and Precipitation contribute positively to PC1 and negatively to PC 2. Additionally there are other factors such as Wind Speed that do not appear to significantly contribute to either PC. This overall reinforces my interpretations based on the pca summaries; PC1 categorizes hot and humid days while PC2 categorizes warm and dry days.</p>
+<p>Regarding the points, each point is indicative of individual days from the dataset, and their position on the plot indicates how strongly they are associated with each PC. For instance, there is a section in the fourth quadrant of the plot that contains a small number of points that are associated positively with PC1 but negatively to PC2. These days are likely both hot as well as wet from a high temperature, humidity, and precipitation. Similarly, there is a set of points in each section of the far left x axis that is neutral with PC 2 and negatively associated with PC1. These days are likely colder with no particularly special level of humidity or precipitation. However, the majority of the data is clustered in the center while stretched across the x axis; it is neutral in regards to PC2, and some points are more negatively associated with PC1 while another half is more positively associated.</p>
+</div>

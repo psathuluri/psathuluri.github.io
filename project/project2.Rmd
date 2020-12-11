@@ -1,8 +1,319 @@
 ---
-title: "Project 2"
-author: "Me"
-date: "2020-12-01"
-output: html_document
+title: 'Project 2: Modeling, Testing, and Predicting'
+author: "SDS348"
+date: '2020-11-22'
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
 ---
+Paul Sathuluri pvs297
+```{r setup, include=FALSE}
+library(knitr)
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
 
-## Test Project 2
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE,fig.align="center",warning=FALSE,message=FALSE,fig.width=8, fig.height=5, linewidth=60)
+options(tibble.width = 100,width = 100)
+
+class_diag<-function(probs,truth){
+  tab<-table(factor(probs>.5,levels=c("FALSE","TRUE")),truth)
+  acc=sum(diag(tab))/sum(tab)
+  sens=tab[2,2]/colSums(tab)[2]
+  spec=tab[1,1]/colSums(tab)[1]
+  ppv=tab[2,2]/rowSums(tab)[2]
+  f1=2*(sens*ppv)/(sens+ppv)
+
+  if(is.numeric(truth)==FALSE & is.logical(truth)==FALSE){
+    truth<-as.numeric(truth)-1}
+  
+  #CALCULATE EXACT AUC
+  ord<-order(probs, decreasing=TRUE)
+  probs <- probs[ord]; truth <- truth[ord]
+  
+  TPR=cumsum(truth)/max(1,sum(truth)) 
+  FPR=cumsum(!truth)/max(1,sum(!truth))
+  
+  dup<-c(probs[-1]>=probs[-length(probs)], FALSE)
+  TPR<-c(0,TPR[!dup],1); FPR<-c(0,FPR[!dup],1)
+  
+  n <- length(TPR)
+  auc<- sum( ((TPR[-1]+TPR[-n])/2) * (FPR[-1]-FPR[-n]) )
+
+  data.frame(acc,sens,spec,ppv,f1,auc)
+}
+
+library(tidyverse)
+library(Ecdat)
+library(kableExtra)
+library(rstatix)
+library(sandwich)
+library(lmtest)
+library(plotROC)
+library(glmnet)
+```
+
+## Introduction
+
+The following dataset from 1980 contains 23972 observations and provides information on the budget share of food for Spanish households. Each entry in the dataset corresponds to a specific Spanish household. The data is sourced from the Journal of Applied Econometrics by means of the 'Ecdat' econometrics R package. The variables include *wfood* (percentage of total expenditure which the household has spent on food), *totexp* (total expenditure of the household), *age* (age of reference person in the household), *size* (number of people in the household), *town* (size of the town where the household is placed ranging from 1 for small towns to 5 for large towns), and *sex* (sex of reference person). I am removing one entry in the dataset because it contains a significant outlier in the *size* field (33 people when the mean is 3.69 and the next highest is 17 people) as well as NA in the *sex* field. 
+```{r}
+budget <- BudgetFood
+budget <- na.omit(budget)
+head(budget)
+```
+
+## MANOVA Test
+```{r}
+man1<-manova(cbind(wfood,totexp)~town, data=budget)
+summary(man1)
+summary.aov(man1) 
+budget%>%group_by(town)%>%summarize(mean(wfood),mean(totexp))
+pairwise.t.test(budget$wfood, budget$town, p.adj = "none")
+pairwise.t.test(budget$totexp, budget$town, p.adj = "none")
+```
+A one-way MANOVA was conducted to determine the effect of the town size (1, 2, 3, 4, 5) on two dependent variables (Total Expenditure and Percent Spent on Food).
+
+Significant differences were found among the five town sizes for at least one of the dependent variables, Pillai trace = 0.078, pseudo F (2, 23969) = 1015.2, p < 0.0001.
+
+Univariate ANOVAs for each dependent variable were conducted as follow-up tests to the MANOVA, using the Bonferroni method for controlling Type I error rates for multiple comparisons. The univariate ANOVAs for Percent Spent on Food and Total Expenditure were also significant, F (1, 23970) = 1818.4, p < .0001, and F (1, 23970) = 1115.3, p < .0001, respectively.
+
+Post hoc analysis was performed conducting pairwise comparisons to determine which Town Sizes differed in Total Expenditure and Percent Spent on Food. Overall, there was 1 MANOVA, 2 ANOVAs, and 20 t tests conducted for a total of 23 tests. The probability of at least one Type 1 error is 1 - 0.95^23 = 0.693. All five Town Sizes were found to differ significantly from each other in terms of Total Expenditure and Percent Spent on Food even after adjusting for multiple comparisons (bonferroni α = .05/23 = 0.0021). 
+
+```{r}
+set.seed(348)
+sampleData <- sample_n(budget, 4000, replace = FALSE)
+group <- sampleData$town
+DVs <- sampleData %>% select(totexp,wfood) 
+
+#Test multivariate normality for each group (null: assumption met)
+sapply(split(DVs,group), mshapiro_test)
+```
+The multivariate normality assumption was not met via the Shapiro-Wilk test, as p < 0.05 for every group.
+
+## Randomization Test: Mean Difference
+Null Hypothesis: Mean total household expenditures is the same for households with a male vs female reference person
+Alternative Hypothesis: Mean total household expenditures are different for households with a male vs female reference person
+```{r}
+rand_dist<-vector()
+for(i in 1:5000){
+new<-data.frame(totexp=sample(budget$totexp),sex=budget$sex) #scramble columns
+rand_dist[i]<-mean(new[new$sex=="man",]$totexp)-   
+              mean(new[new$sex=="woman",]$totexp)} #compute mean difference (base R)
+
+budget%>%group_by(sex)%>%summarize(means=mean(totexp))%>%summarize(`mean_diff`=diff(means))
+{hist(rand_dist,main="",ylab=""); abline(v = c(-351020, 351020),col="red")} 
+mean(rand_dist>351020 | rand_dist < -351020	) 
+t.test(data=budget,totexp~sex)
+```
+p < 0.05, indicating we reject the null hypothesis as Mean total household expenditures are different for households with a male vs female reference person. The overall calculated mean difference of +351020 and -351020 fall outside the bounds of the histogram, so the red lines are not visible.
+
+## Linear Regression Model
+```{r}
+# Mean Centering of numeric variables
+budget <- BudgetFood %>% na.omit()
+budget$town <- factor(budget$town)
+budget$size <- budget$size - mean(budget$size, na.rm = T)
+
+fit <- lm(totexp~town*size, data = budget)
+summary(fit)
+```
+Controlling for Household Size, Total Expenditures is on average 13100 units higher for households in a town size of 2 compared to a town size of 1. 
+Controlling for Household Size, Total Expenditures is on average 95916 units higher for households in a town size of 3 compared to a town size of 1. 
+Controlling for Household Size, Total Expenditures is on average 258612 units higher for households in a town size of 4 compared to a town size of 1. 
+Controlling for Household Size, Total Expenditures is on average 359357 units higher for households in a town size of 5 compared to a town size of 1. 
+In households in a town size of 1, for every 1 unit increase in household size, there is on average a 134974 increase in Total Expenditures. 
+The slope for household size on total expenditures is 31266 less for households in a town of size 2 compared to a town size of 1. 
+The slope for household size on total expenditures is 18595 less for households in a town of size 3 compared to a town size of 1. 
+The slope for household size on total expenditures is 8121 greater for households in a town of size 4 compared to a town size of 1. 
+The slope for household size on total expenditures is 31861 greater for households in a town of size 5 compared to a town size of 1. 
+
+
+```{r}
+ggplot(budget, aes(x=size, y=totexp, group=town, color = town)) +
+  geom_smooth(method="lm") + 
+  xlab("Household Size (persons)") + 
+  ylab("Total Expenditures") + 
+  ggtitle("Total Expenditures vs Household Size and Town Size")
+```
+
+
+```{r}
+breaks <- seq(min(budget$size), max(budget$size), len=8)
+ggplot(budget, aes(size, totexp)) +
+  geom_point() +
+  theme_bw()+
+  geom_vline(xintercept=breaks, lty=2,color='gray50')+ 
+  geom_smooth(method='lm')
+
+ks.test(fit$residuals, "pnorm", mean=0, sd(fit$residuals))
+bptest(fit)
+```
+Looking at the scatterplot and regression line, it appears that no assumptions have been met. The data points do not appear to be linear, the residuals do not appear to be normally distributed, and the points fan out towards the start of the regression line, violating linearity, normality, and homoskedasticity. This is also proven by the results of the Kolmogorov-Smirnov and Breusch-Pagan tests, as in both cases p < 0.05 indicating the model is neither normal nor homoskedastic. 
+
+```{r}
+fit<-lm(totexp~size*town,data=budget)
+summary(fit)
+coeftest(fit, vcov = vcovHC(fit))
+```
+There are minor variations in standard error, but overall there were no changes in significance when using robust standard errors vs without. town2 and the interaction size:town4 in both cases have a p value of 0.05 This indicates a failure to find a significant difference between a town of size 2 and total expenditures, as well as on the slope of household size on total expenditures between a town of size 1 and a town of size 4. According to the r^2 value, this linear model accounts for 0.186 of the variation in the outcome.
+
+## Bootstrapped Standard Errors
+```{r}
+boot_dat<- sample_frac(budget, replace=T)
+# repeat 5000 times
+samp_distn<-replicate(500, {
+  boot_dat <- sample_frac(budget, replace=T) #take bootstrap sample of rows
+  fit<-lm(totexp~size*town,data=boot_dat) #fit model on bootstrap sample
+  coef(fit) #save coefs
+})
+## Estimated SEs
+samp_distn %>% t %>% as.data.frame %>% summarize_all(sd)
+```
+Overall there appears to be an increase between original SE and robust SE, and little to no increase between robust SE and bootstrapped SE. The p value went up across all as well. 
+
+## Logistic Regression from Two Variables
+```{r}
+budget <- budget %>% mutate(sex=recode(sex, "man" = 1,"woman" = 0))
+fit<-glm(sex~town+size, data=budget, family="binomial")
+coeftest(fit)
+```
+Controlling for size of the household, the likelihood of a male reference person in a town of size 2 is -0.255333 times that of a town of size 1.
+Controlling for size of the household, the likelihood of a male reference person in a town of size 3 is -0.335488 times that of a town of size 1.
+Controlling for size of the household, the likelihood of a male reference person in a town of size 4 is -0.580522 times that of a town of size 1.
+Controlling for size of the household, the likelihood of a male reference person in a town of size 5 is -0.663683 times that of a town of size 1.
+Larger towns are more likely to have a female reference person for a given household. 
+Controlling for town size, for every 1 person increase in the size of a household there is a 0.9167 increase in the likelihood of a male reference person. 
+More people in a household increases the likelihood of a male reference person. 
+
+```{r}
+probs<-predict(fit,type="response") #get predicted probs from the model
+#let's use .5 as our threshold for predicting malignant
+table(predict=as.numeric(probs>.5),truth=budget$sex)%>%addmargins
+
+ROCplot<-ggplot(budget)+geom_roc(aes(d=sex,m=probs), n.cuts=0)+
+  geom_segment(aes(x=0,xend=1,y=0,yend=1),lty=2)
+calc_auc(ROCplot)
+```
+Compute and discuss the Accuracy, Sensitivity (TPR), Specificity (TNR), Precision (PPV), and AUC of your model (5)
+Accuracy is (785 + 20434)/23971 = 0.8852
+Sensitivity is 20434/20624 = 0.9908
+Specificity is 785/3347 = 0.2345
+Precision is 20434/22996 = 0.8886
+AUC is 0.8103, which is classified as "Good"
+
+```{r}
+budget$logit<-predict(fit,type="link")
+budget%>%ggplot()+geom_density(aes(logit,color=factor(sex),fill=factor(sex)), alpha=.4)+
+  theme(legend.position=c(.85,.85))+geom_vline(xintercept=0)+xlab("logit (log-odds)")+
+  geom_rug(aes(logit,color=factor(sex)))
+```
+Density Plot of log-odds above
+
+```{r}
+probs<-predict(fit,type="response") #get predicted probs from the model
+ROCplot<-ggplot(budget)+geom_roc(aes(d=sex,m=probs), n.cuts=0)+
+  geom_segment(aes(x=0,xend=1,y=0,yend=1),lty=2)
+ROCplot
+calc_auc(ROCplot)
+```
+With an AUC of 0.8103, the model does a good job of predicting sex of the reference person based on Size of the Town and Number of People in the Household. 
+
+## Logistic Regression from All Variables
+```{r}
+budget <- BudgetFood %>% na.omit()
+budget$size <- budget$size - mean(budget$size, na.rm = T)
+budget$wfood <- budget$wfood - mean(budget$wfood, na.rm = T)
+budget$age <- budget$age - mean(budget$age, na.rm = T)
+budget$totexp <- budget$totexp - mean(budget$totexp, na.rm = T)
+budget <- budget %>% mutate(sex=recode(sex, "man" = 1,"woman" = 0))
+fit<-glm(sex~., data=budget, family="binomial")
+coeftest(fit)
+
+probs<-predict(fit,type="response") #get predicted probs from the model
+class_diag(probs,budget$sex) 
+```
+Accuracy: 0.8865296
+Sensitivity: 0.9924845
+Specificity: 0.2336421
+Precision: 0.8886429
+AUC: 0.81235
+With an AUC of 0.81235, the model does a good job of predicting sex of the reference person based on the remaining variables (wfood, totexp, size, age, town)
+```{r}
+set.seed(1234)
+k=10 #choose number of folds
+data<-budget[sample(nrow(budget)),] #randomly order rows
+folds<-cut(seq(1:nrow(budget)),breaks=k,labels=F) #create folds
+diags<-NULL
+for(i in 1:k){
+  ## Create training and test sets
+  train<-data[folds!=i,]
+  test<-data[folds==i,]
+  truth<-test$sex ## Truth labels for fold i
+  ## Train model on training set (all but fold i)
+  fit<-glm(sex~., data=budget, family="binomial")
+  ## Test model on test set (fold i)
+  probs<-predict(fit,newdata = test,type="response")
+  ## Get diagnostics for fold i
+  diags<-rbind(diags,class_diag(probs,truth))
+}
+ summarize_all(diags,mean) 
+```
+Accuracy: 0.8865293 
+Sensitivity: 0.9924839 
+Specificity: 0.2336594
+Precision: 0.8886482
+AUC: 0.81235  
+With an AUC of 0.81235, the 10-fold cross validation model does a good job of predicting sex of the reference person based on the remaining variables (wfood, totexp, size, age, town). Classification diagnostics and AUC are both almost identical to the in-sample metrics.
+
+```{r}
+set.seed(1234)
+# your code here
+fit <- glm(sex~., data = budget, family="binomial")
+b_preds <- model.matrix(sex~ -1+., data=budget) 
+b_preds <- scale(b_preds)
+responseMatrix <- as.matrix(budget$sex)
+
+cv.lasso1<-cv.glmnet(x=b_preds,y=responseMatrix,family="binomial")
+lasso_fit<-glmnet(x=b_preds,y=responseMatrix,family="binomial",lambda=cv.lasso1$lambda.1se)
+coef(lasso_fit)
+```
+According to lasso, the best predictors for Sex of the reference person are Total Expenditures, Age of reference person, Size of Household, and Size of Town. Proportion of expenditures spent on food was dropped as a predictor. 
+
+```{r}
+set.seed(1234)
+k=10 #choose number of folds
+data<-budget[sample(nrow(budget)),] #randomly order rows
+folds<-cut(seq(1:nrow(budget)),breaks=k,labels=F) #create folds
+diags<-NULL
+for(i in 1:k){
+  ## Create training and test sets
+  train<-data[folds!=i,]
+  test<-data[folds==i,]
+  truth<-test$sex ## Truth labels for fold i
+  ## Train model on training set (all but fold i)
+  fit<-glm(sex~totexp+age+size+town, data=budget, family="binomial")
+  ## Test model on test set (fold i)
+  probs<-predict(fit,newdata = test,type="response")
+  ## Get diagnostics for fold i
+  diags<-rbind(diags,class_diag(probs,truth))
+}
+ summarize_all(diags,mean) 
+```
+Accuracy: 0.886571  
+Sensitivity: 0.9932116  
+Specificity: 0.2294437 
+Precision: 0.8881811 
+AUC: 0.81244   
+
+With an AUC of 0.81244, the 10-fold cross validation model does a good job of predicting sex of the reference person. This out-of-sample AUC is 0.0001 higher than that of the previous logistic regressions. Although very slightly better, all the regressions have almost identical AUCs. Accuracy is 0.00005 higher, Sensitivity is 0.001 higher, and Precision is 0.0005 lower compared to previous regressions. Overall and for all practical purposes, the 10-fold cross validation model with lasso-chosen predictors has identical metrics and AUCs to the 10-fold CV and Logistic models with all predictors.

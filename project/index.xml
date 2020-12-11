@@ -6,23 +6,24 @@
     <description>Recent content in Projects on Paul Sathuluri</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-US</language>
-    <lastBuildDate>Tue, 01 Dec 2020 00:00:00 +0000</lastBuildDate><atom:link href="/project/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sun, 22 Nov 2020 00:00:00 +0000</lastBuildDate><atom:link href="/project/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>Project 1</title>
-      <link>/project/project1/</link>
-      <pubDate>Tue, 01 Dec 2020 00:00:00 +0000</pubDate>
+      <title>Project 2: Modeling, Testing, and Predicting</title>
+      <link>/project/project2/</link>
+      <pubDate>Sun, 22 Nov 2020 00:00:00 +0000</pubDate>
       
-      <guid>/project/project1/</guid>
-      <description>  Test Project 1  </description>
+      <guid>/project/project2/</guid>
+      <description>Paul Sathuluri pvs297
+Introduction The following dataset from 1980 contains 23972 observations and provides information on the budget share of food for Spanish households. Each entry in the dataset corresponds to a specific Spanish household. The data is sourced from the Journal of Applied Econometrics by means of the ‘Ecdat’ econometrics R package. The variables include wfood (percentage of total expenditure which the household has spent on food), totexp (total expenditure of the household), age (age of reference person in the household), size (number of people in the household), town (size of the town where the household is placed ranging from 1 for small towns to 5 for large towns), and sex (sex of reference person).</description>
     </item>
     
     <item>
-      <title>Project 2</title>
-      <link>/project/project2/</link>
-      <pubDate>Tue, 01 Dec 2020 00:00:00 +0000</pubDate>
+      <title>Project 1</title>
+      <link>/project/project1/</link>
+      <pubDate>Sun, 18 Oct 2020 00:00:00 +0000</pubDate>
       
-      <guid>/project/project2/</guid>
-      <description>  Test Project 2  </description>
+      <guid>/project/project1/</guid>
+      <description>Introduction The datasets chosen for this project include Austin TX weather data sourced from WeatherUnderground.com, and Austin bike share trips sourced from the City of Austin. Both datasets were obtained from kaggle.com. I chose these datasets because I am familiar with them from a prior UT Austin DataHack competition, and the information and results are relevant to me as an Austin resident who uses the bicycle share program. Both of the datasets contain entries from December 21st, 2013 to July 31st, 2017.</description>
     </item>
     
   </channel>
