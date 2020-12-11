@@ -28,6 +28,6 @@ primes = r.nums + r.mins
 print(primes)
 ```
 
-Just like that, you have a list of yor favorite primes in the same list of your favorite primes, a prime example of just how useful Retirculate can be!
+Just like that, you have a list of yor favorite primes in the same list of your favorite primes, a **prime** example of how useful Reticulate can be!
 
 ![](/post/2020-12-11-reticulate-r-python_files/ikQnbyk.jpg)
