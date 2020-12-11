@@ -1,0 +1,33 @@
+---
+title: 'Reticulate: R & Python'
+author: Paul Sathuluri
+date: '2020-12-11'
+slug: reticulate-r-python
+categories: []
+tags: []
+description: ''
+---
+
+### What is Reticulate?
+
+Reticulate is a cool package that lets R communicate with Python. It converts the R objects types into their equivalent Python types and vice versa, which lets us do some pretty neat things. 
+
+### Reticulate in Action
+For instance, say you had a list in R of your favorite prime numbers (doesn't everybody?). And say you also had a list of your favorite prime ministers (that's kind of weird I'll admit).
+
+``` {r warning=FALSE}
+library(reticulate)
+nums <- c(73, 431, 907, 89, 211)
+mins <- c("Margaret Thatcher", "Winston Churchill", "Vladimir Putin", "Indira Gandhi", "David Cameron")
+```
+
+And say you wanted to spice things up by adding 1 to every number in the list. You're sure theres an easy way to do this in R (probably by importing some library nobody cares about) but you know theres an even easier way of doing it in python. And now, with Reticulate, you can simply do: 
+
+``` {python}
+primes = r.nums + r.mins
+print(primes)
+```
+
+Just like that, you have a list of yor favorite primes in the same list of your favorite primes, a prime example of just how useful Retirculate can be!
+
+![](/post/2020-12-11-reticulate-r-python_files/ikQnbyk.jpg)
