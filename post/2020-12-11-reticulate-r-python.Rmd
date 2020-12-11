@@ -21,7 +21,7 @@ nums <- c(73, 431, 907, 89, 211)
 mins <- c("Margaret Thatcher", "Winston Churchill", "Vladimir Putin", "Indira Gandhi", "David Cameron")
 ```
 
-And say you wanted to spice things up by adding 1 to every number in the list. You're sure theres an easy way to do this in R (probably by importing some library nobody cares about) but you know theres an even easier way of doing it in python. And now, with Reticulate, you can simply do: 
+And say you wanted to spice things up by combining them into a single list of Primes. You're sure there's an easy way to do this in R (probably by importing some library nobody cares about) but you also know there's an even easier way of doing it in python. And now, with Reticulate, you can simply do: 
 
 ``` {python}
 primes = r.nums + r.mins
